@@ -1,5 +1,5 @@
 using Interpolations, Base.Threads, Statistics, CUDA, QuadGK, .Threads
-export fast_average_fidelity_vs_time, χ
+export fast_average_fidelity_vs_time, χ, simulate_multiaxis_fidelity
 """
     fast_average_fidelity_vs_time(S_func; T_max, dt, n_realizations, target_std, seed_offset, use_gpu, verbose)
 
@@ -93,4 +93,60 @@ function χ(S_func::Function, F_func::Function, t_vals::AbstractVector, dt; trun
     return χ_vals
 end
 
+#--------------------------------------------------------------------------------------------------
 
+function simulate_multiaxis_fidelity(; ψ₀=normalize(basis(2, 0) + basis(2, 1)),
+    T_max::Float64=10.0,
+    dt::Float64=0.01,
+    n_realizations::Int=100,
+    target_std=1.0,
+    dc=0.0,
+    seed_offset=0,
+    use_gpu=true,
+    verbose=false,
+    S_func_x=nothing,
+    S_func_y=nothing,
+    S_func_z=nothing,
+    mod_func_x::Function = t -> 1.0,
+    mod_func_y::Function = t -> 1.0,
+    mod_func_z::Function = t -> 1.0,
+    pulses = nothing
+    )
+
+    T_vals = collect(0:dt:T_max)
+    n_T = length(T_vals)
+    fidelity_matrix = zeros(Float32, n_realizations, n_T)
+    @threads for i in 1:n_realizations
+        begin
+            noise_terms = []
+
+            if S_func_x !== nothing
+                t_beta_x, β_x = generate_beta(S_func_x, T_max; dt=dt, target_std=target_std, seed=seed_offset + i + 1000, dc=dc)
+                β_func_x = LinearInterpolation(t_beta_x, β_x, extrapolation_bc=Line())
+                push!(noise_terms, (sigmax(), (p,t) -> 0.5 * mod_func_x(t) * β_func_x(t)))
+            end
+
+            if S_func_y !== nothing
+                t_beta_y, β_y = generate_beta(S_func_y, T_max; dt=dt, target_std=target_std, seed=seed_offset + i + 2000, dc=dc)
+                β_func_y = LinearInterpolation(t_beta_y, β_y, extrapolation_bc=Line())
+                push!(noise_terms, (sigmay(), (p,t) -> 0.5 * mod_func_y(t) * β_func_y(t)))
+            end
+
+            if S_func_z !== nothing
+                t_beta_z, β_z = generate_beta(S_func_z, T_max; dt=dt, target_std=target_std, seed=seed_offset + i + 3000, dc=dc)
+                β_func_z = LinearInterpolation(t_beta_z, β_z, extrapolation_bc=Line())
+                push!(noise_terms, (sigmaz(), (p,t) -> 0.5 * mod_func_z(t) * β_func_z(t)))
+            end
+
+            tlist, result, fidelity_t = run_simulation(ψ₀; noise_terms=noise_terms, T=T_max, dt=dt, pulses=pulses)
+            fidelity_matrix[i, :] .= Float32.(fidelity_t)
+
+            if verbose && i % 10 == 0
+                @info "Realization $i complete on thread $(threadid())"
+            end
+        end
+    end
+
+    avg_fid = mean(fidelity_matrix, dims=1)[:]
+    return T_vals, avg_fid
+end
