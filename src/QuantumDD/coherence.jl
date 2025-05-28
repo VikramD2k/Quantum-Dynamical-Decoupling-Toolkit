@@ -94,6 +94,50 @@ function χ(S_func::Function, F_func::Function, t_vals::AbstractVector, dt; trun
 end
 
 #--------------------------------------------------------------------------------------------------
+"""
+    simulate_multiaxis_fidelity(; kwargs...) -> (T_vals, avg_fid)
+
+Simulates decoherence under multi-axis time-dependent noise, with optional control pulses.
+
+This function numerically evolves an initial quantum state ψ₀ under noisy Hamiltonians
+involving stochastic noise along X, Y, and Z axes — each axis can be independently modulated
+by user-defined spectral densities and control modulation functions. Optional shaped pulses
+can be applied to simulate control operations (e.g., Hahn, CPMG).
+
+Multiple stochastic noise realizations are simulated in parallel using multi-threading,
+and the average state fidelity is computed as a function of total evolution time.
+
+# Keyword Arguments
+- `ψ₀::Ket`: Initial quantum state (default: equal superposition of |0⟩ and |1⟩).
+- `T_max::Float64`: Total evolution time.
+- `dt::Float64`: Time resolution for simulation.
+- `n_realizations::Int`: Number of stochastic noise samples to average over.
+- `target_std::Float64`: Desired standard deviation of β(t) noise realizations.
+- `dc::Float64`: Optional DC offset added to all β(t) realizations.
+- `seed_offset::Int`: Offset added to RNG seed for reproducibility.
+- `use_gpu::Bool`: Placeholder for future GPU support (not used currently).
+- `verbose::Bool`: Print progress every 10 realizations per thread.
+- `S_func_x`, `S_func_y`, `S_func_z`: Spectral density functions ω → S(ω) for each axis.
+- `mod_func_x`, `mod_func_y`, `mod_func_z`: Modulation functions t → ±1 for each axis (default: identity).
+- `pulses::Vector`: Optional vector of shaped pulses (Dicts) for explicit control terms.
+
+# Returns
+- `T_vals::Vector`: Time values from 0 to T_max in steps of dt.
+- `avg_fid::Vector`: Average state fidelity at each time T, computed over all realizations.
+
+# Example
+```julia
+S = ω -> 1 / (ω^2 + 1)  # Lorentzian OU noise
+mod = get_modulation_function(get_pulse_times("HAHN", 10.0, 1))
+
+T_vals, fid = simulate_multiaxis_fidelity(
+    S_func_z = S,
+    mod_func_z = mod,
+    T_max = 10.0,
+    dt = 0.01,
+    n_realizations = 1000
+)
+"""
 
 function simulate_multiaxis_fidelity(; ψ₀=normalize(basis(2, 0) + basis(2, 1)),
     T_max::Float64=10.0,
