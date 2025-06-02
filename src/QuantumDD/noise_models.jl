@@ -40,7 +40,7 @@ function get_preset_params(name::String)
     elseif name == "1/f"
         return Dict(:a => 0, :b => 1, :α => 1.0, :c => 0.01, :ω_c => Inf)
     elseif name == "ou"
-        return Dict(:a => 1, :b => 0, :c => 0, :ω_c => Inf)
+        return Dict(:a => 1, :c => 0, :ω_c => Inf)
     elseif name == "quasi_static"
         return Dict(:a => 1, :b => 0.1, :c => 0)
     elseif name == "composite"
