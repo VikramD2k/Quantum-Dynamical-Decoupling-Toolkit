@@ -1,4 +1,5 @@
-using Interpolations, Base.Threads, Statistics, QuadGK, .Threads, QuantumToolbox, SparseArrays
+using Interpolations, Base.Threads, Statistics, QuadGK, .Threads, QuantumToolbox, SparseArrays, ProgressMeter
+
 export fast_average_fidelity_vs_time, χ, simulate_modulated_noise_fidelity, simulate_shaped_control_fidelity
 """
     fast_average_fidelity_vs_time(S_func; T_max, dt, n_realizations, target_std, seed_offset, use_gpu, verbose)
@@ -35,7 +36,7 @@ function fast_average_fidelity_vs_time(S_func;
 
     # Allocate storage
     fidelity_matrix = zeros(Float32, n_realizations, n_T)
-
+    p = Progress(n_realizations, 1, "Simulating")
     @threads for i in 1:n_realizations
         t_beta, β_t = generate_beta(S_func, T_max; dt=dt, target_std=target_std , seed=seed_offset + i, dc=dc)
         β_func = LinearInterpolation(t_beta, β_t, extrapolation_bc=Line())  # or Flat() or Throw(), your choice
@@ -48,6 +49,7 @@ function fast_average_fidelity_vs_time(S_func;
         if  verbose && i % 10 == 0
             @info "Finished realization $i on thread $(threadid())"
         end
+        ProgressMeter.next!(p)
     end 
     
     avg_fid = mean(fidelity_matrix, dims=1)[:]
@@ -211,7 +213,9 @@ function simulate_shaped_control_fidelity(;
     T_max::Float64 = 10.0,
     dt::Float64 = 0.01,
     n_realizations::Int = 100,
-    target_std = 1.0,
+    target_std_x = 0.0,
+    target_std_y = 0.0,
+    target_std_z = 0.1,
     dc = 0.0,
     seed_offset = 0,
     verbose = false,
@@ -223,24 +227,24 @@ function simulate_shaped_control_fidelity(;
     T_vals = collect(0:dt:T_max)
     n_T = length(T_vals)
     fidelity_matrix = zeros(Float32, n_realizations, n_T)
-
+    p = Progress(n_realizations, 1, "Simulating")
     @threads for i in 1:n_realizations
         noise_terms = []
 
         if S_func_x !== nothing
-            t_beta_x, β_x = generate_beta(S_func_x, T_max; dt=dt, target_std=target_std, seed=seed_offset + i + 1000, dc=dc)
+            t_beta_x, β_x = generate_beta(S_func_x, T_max; dt=dt, target_std=target_std_x, seed=seed_offset + i + 1000, dc=dc)
             β_func_x = LinearInterpolation(t_beta_x, β_x, extrapolation_bc=Line())
             push!(noise_terms, (sigmax(), (p, t) -> 0.5 * β_func_x(t)))
         end
 
         if S_func_y !== nothing
-            t_beta_y, β_y = generate_beta(S_func_y, T_max; dt=dt, target_std=target_std, seed=seed_offset + i + 2000, dc=dc)
+            t_beta_y, β_y = generate_beta(S_func_y, T_max; dt=dt, target_std=target_std_y, seed=seed_offset + i + 2000, dc=dc)
             β_func_y = LinearInterpolation(t_beta_y, β_y, extrapolation_bc=Line())
             push!(noise_terms, (sigmay(), (p, t) -> 0.5 * β_func_y(t)))
         end
 
         if S_func_z !== nothing
-            t_beta_z, β_z = generate_beta(S_func_z, T_max; dt=dt, target_std=target_std, seed=seed_offset + i + 3000, dc=dc)
+            t_beta_z, β_z = generate_beta(S_func_z, T_max; dt=dt, target_std=target_std_z, seed=seed_offset + i + 3000, dc=dc)
             β_func_z = LinearInterpolation(t_beta_z, β_z, extrapolation_bc=Line())
             push!(noise_terms, (sigmaz(), (p, t) -> 0.5 * β_func_z(t)))
         end
@@ -256,9 +260,10 @@ function simulate_shaped_control_fidelity(;
         # if verbose && i % 10 == 0
         #     @info "Realization $i complete on thread $(threadid())"
         # end
-        if i % 20 == 0
-            @info "Realization $i complete"
-        end
+        # if i % 20 == 0
+        #     @info "Realization $i complete"
+        # end
+        ProgressMeter.next!(p)
     end
 
     avg_fid = mean(fidelity_matrix, dims=1)[:]

@@ -22,7 +22,7 @@ function S(ω::AbstractVector; a=0.0, b=0.0, α=1.0, c=1.0, d=0.0, e=0.0, f=0.0,
     end
     
     Total = base .+ gauss_part
-    Total[findall(abs.(ω) .< 1e-10)] .= 0.0 # S(0) is set to 0
+    Total[findall(abs.(ω) .< 1e-10)] .= 0.0 # S(0) is manually set to 0 for all omega close to zero.
 
     return Total
 end

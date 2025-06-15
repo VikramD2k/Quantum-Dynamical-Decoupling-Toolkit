@@ -42,12 +42,27 @@ end
 
 #-------------------------------------------------------------------------------------------------------------------------------------
 
-function filter_cdd(ω::AbstractVector, τ::Real, level::Int, num_points::Int=10_000)
+function filter_cdd(ω::AbstractVector, τ::Real, level::Int; num_points::Int=10_000)
     pulse_times = τ .* generate_cdd_pulse_times(level)
-    t, y_t = generate_modulation_function(pulse_times, τ, num_points)
+    t, y_t = generate_modulation_function(pulse_times, τ, num_points) # numerical modulation function y(t)
     dt = t[2] - t[1]
-    y_omega = [sum(y_t .* exp.(1im * ωj * t)) * dt for ωj in ω]
+    exponential_matrix = exp.(1im .* ωj .* t)  # outer product for efficiency
+    y_omega = exponential_matrix * y_t .* dt
     return abs2.(y_omega)
 end
 
 #-------------------------------------------------------------------------------------------------------------------------------------
+
+function filter_pdd(ω::AbstractVector, τ::Real, n_pulses::Int; num_points::Int=10_000)
+    pulse_times = get_pulse_times("PDD", τ, n_pulses)
+    y = get_modulation_function(pulse_times)  # symbolic modulation function y(t)
+
+    t = range(0, τ, length=num_points)
+    dt = t[2] - t[1]
+    y_t = [y(ti) for ti in t]  # sample the symbolic function
+
+    # Compute the numerical Fourier transform
+    exponential_matrix = exp.(1im .* ωj .* t)  # outer product for efficiency
+    y_omega = exponential_matrix * y_t .* dt
+    return abs2.(y_omega)
+end
