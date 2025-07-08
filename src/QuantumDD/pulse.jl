@@ -21,17 +21,19 @@ function get_pulse_times(sequence::String, total_time::Float64, n_pulses::Int)
         return [total_time / 2]
     elseif sequence == "PDD"
         return [(j + 1) * total_time / (n_pulses + 1) for j in 0:(n_pulses - 1)]
-    elseif sequence == "CDD"
+    elseif sequence == "CDD" # this is the default CDD sequence made from Hahn Echo
         # Interpriting n_pulses as the level of CDD
         @assert n_pulses >= 0 "n_pulses must be non-negative for CDD"
-        return total_time * generate_cdd_pulse_times(n_pulses)
+        return total_time * generate_cdd_pulse_times(n_pulses; sequence="Hahn")
+    elseif sequence == "CDD XY8"
+        # Interpriting n_pulses as the level of CDD
+        return total_time * generate_cdd_pulse_times(n_pulses; sequence="XY8")
     else
         error("Unsupported DD sequence: $sequence")
     end
 end
 
-#--------------------------------------------------------------------------------------------------------------------------------------
-
+#-------------------------------------------------------------------------------------------------------------------------------------------
 function get_modulation_function(pulse_times::Vector{Float64})
     pulse_times = sort(pulse_times)
     return t -> (-1)^count(ti -> ti < t, pulse_times)
@@ -44,32 +46,67 @@ function get_shaped_pulses(sequence::String, total_time::Float64, n_pulses::Int;
                            shape::String="square",
                            axis::Symbol=:x,
                            center_pulse::Bool=true)::Vector{Pulse}
-    @assert axis in (:x, :y, :z) "Unsupported axis: $axis"
 
-    pulse_times = get_pulse_times(sequence, total_time, n_pulses)
-    pulses = Pulse[]
+    if sequence != "CDD XY8"
+        @assert axis in (:x, :y, :z) "Unsupported axis: $axis"
 
-    for t0 in pulse_times
-        t_start = center_pulse ? t0 - pulse_duration/2 : t0
-        t_end   = center_pulse ? t0 + pulse_duration/2 : t0 + pulse_duration
-        push!(pulses, Pulse(t_start, t_end, shape, axis))
+        pulse_times = get_pulse_times(sequence, total_time, n_pulses)
+        pulses = Pulse[]
+
+        for t0 in pulse_times
+            t_start = center_pulse ? t0 - pulse_duration/2 : t0
+            t_end   = center_pulse ? t0 + pulse_duration/2 : t0 + pulse_duration
+            push!(pulses, Pulse(t_start, t_end, shape, axis))
+        end
+    elseif sequence == "CDD XY8"
+        pulse_times = get_pulse_times(sequence, total_time, n_pulses)# interpriting n_pulses as the level of CDD
+        pattern = [:x, :y, :x, :y, :y, :x, :y, :x]  # XY8 pattern
+        pulses = Pulse[]
+
+        for (i, t0) in enumerate(pulse_times)
+            t_start = center_pulse ? t0 - pulse_duration/2 : t0
+            t_end   = center_pulse ? t0 + pulse_duration/2 : t0 + pulse_duration
+            axis = pattern[mod1(i, 8)]  # Wrap every 8 pulses
+            push!(pulses, Pulse(t_start, t_end, shape, axis))
+        end
+
+        return pulses
+    else
+        error("Unsupported sequence: $sequence")
     end
-
     return pulses
 end
 
 #--------------------------------------------------------------------------------------------------------------------------------------
 
 # CDD: Recursive modulation function over time interval [0, τ]
-function generate_cdd_pulse_times(level::Int; t_start::Float64 = 0.0, t_end::Float64 = 1.0)
-    if level == 0
-        return Float64[]
-    else
-        t_mid = 0.5 * (t_start + t_end)
-        left = generate_cdd_pulse_times(level - 1; t_start = t_start, t_end = t_mid)
-        right = generate_cdd_pulse_times(level - 1; t_start = t_mid, t_end = t_end)
+function generate_cdd_pulse_times(level::Int; t_start::Float64 = 0.0, 
+                                  t_end::Float64 = 1.0, sequence::String = "Hahn" # defaults to Hahn Echo
+                                  )
+    if sequence == "Hahn"
+        if level == 0
+            return Float64[]
+        else
+            t_mid = 0.5 * (t_start + t_end)
+            left = generate_cdd_pulse_times(level - 1; t_start = t_start, t_end = t_mid)
+            right = generate_cdd_pulse_times(level - 1; t_start = t_mid, t_end = t_end)
         return sort(vcat(left, [t_mid], right))
-    end
+        end
+    elseif sequence == "XY8"
+        if level == 0
+            # XY8 relative positions in [0,1]
+            rel_positions = [1, 3, 5, 7, 9, 11, 13, 15] ./ 16
+            return [t_start + τ * (t_end - t_start) for τ in rel_positions]
+        else
+            t_mid = 0.5 * (t_start + t_end)
+            left = generate_cdd_pulse_times(level - 1; t_start = t_start, t_end = t_mid, sequence = sequence)
+            right = generate_cdd_pulse_times(level - 1; t_start = t_mid, t_end = t_end, sequence = sequence)
+            return sort(vcat(left, right))
+        end
+    else
+        error("Unsupported sequence: $sequence")
+    end    
+    
 end
 #--------------------------------------------------------------------------------------------------------------------------------------
 using Plots

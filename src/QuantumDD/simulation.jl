@@ -48,6 +48,8 @@ function run_simulation(ψ₀;
     return tlist, result, fidelity_t
 end
 
+#-------------------------------------------------------------------------------------------------------
+
 function simulate_rabi_with_z_noise(Ω, ω_drive, β_t, tlist; ψ₀=normalize(basis(2, 0) + basis(2, 1)))
     
 
